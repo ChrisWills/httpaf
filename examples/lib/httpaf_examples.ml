@@ -39,6 +39,28 @@ end
 module Server = struct
   let echo_post reqd =
     match Reqd.request reqd  with
+    | { Request.meth = `GET; Request.target = "/text"; _ } ->
+    let ic = Stdio.In_channel.create "/tmp/aaa" in
+    let headers =
+      Headers.of_list ["content-type", "application/octet-stream";"content-length", Int64.to_string (Stdio.In_channel.length ic)]
+    in
+    let _request_body          = Reqd.request_body reqd in
+    Body.Reader.close _request_body;
+    let response_body = Reqd.respond_with_streaming ~flush_headers_immediately:true reqd (Response.create ~headers `OK) in
+
+    let buf = Bytes.create 65536  in
+
+    let rec loop () =
+      let len = Stdio.In_channel.input ic ~buf ~pos:0 ~len:65536 in
+      match len with
+      | l when l > 0 ->
+        Body.Writer.write_string response_body (Bytes.To_string.sub buf ~pos:0 ~len);
+        Body.Writer.flush response_body (fun () -> ());
+        loop ()
+      | _ -> ()
+    in
+    loop ()
+
     | { Request.meth = `POST; headers; _ } ->
       let response =
         let content_type =
